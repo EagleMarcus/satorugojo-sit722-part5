@@ -1,0 +1,52 @@
+# 
+# GitHub Actions workflow.
+#
+# Infrastructure Formation for the Deployment
+#
+
+name: Form the Infrastructure
+
+on:
+
+  #
+  # Deployment triggered manually through the GitHub Actions user interface.
+  #
+  workflow_dispatch: 
+  
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+
+    steps:
+      
+      # Checks-out your repository under $GITHUB_WORKSPACE.
+      - uses: actions/checkout@v3
+
+      # login to Azure services
+      - name: Azure login
+        run: az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CREDENTIALS }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+
+      # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+       # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./scripts/terraform/  # Adjusted path to the Terraform folder
+
+      # Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: ./scripts/terraform/  # Adjusted path to the Terraform folder
+
+      # Terraform Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ./scripts/terraform/  # Adjusted path to the Terraform folder

@@ -1,0 +1,159 @@
+# 
+# GitHub Actions workflow.
+#
+
+name: Deploy the Microservices
+
+on:
+  
+  #
+  # Deployment on manual interference through the GitHub Actions user interface.
+  #
+  workflow_dispatch: 
+
+jobs:
+
+  terraform:
+    runs-on: ubuntu-latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    
+    env:      
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_APP_NAME: ${{ secrets.AZURE_APP_NAME }}
+      AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+      VERSION: ${{ github.sha }}
+
+    steps:
+      # Checks-out repository under $GITHUB_WORKSPACE.
+      - uses: actions/checkout@v3
+
+      # Set up Docker
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      # Install Docker Compose
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
+      # Make the build script executable
+      - name: Make build-image.sh executable
+        run: chmod +x ./scripts/build-image.sh
+
+      # Login to Azure services
+      - name: Azure login
+        run: az login --service-principal -t ${{ secrets.AZURE_TENANT_ID }} -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Get container registry URL --output
+      - name: Azure CLI container registry URL
+        id: CONTAINER_REGISTRY
+        run: |
+          h=$(az acr list -g $AZURE_RESOURCE_GROUP_NAME --query "[].{acrLoginServer:loginServer}[0].acrLoginServer" --output tsv) 
+          echo "CONTAINER_REGISTRY_URL=$h" >> $GITHUB_ENV
+
+      # Get container registry password --output
+      - name: Azure CLI container registry password
+        id: REGISTRY_PW
+        run: |
+          h=$(az acr credential show -n ${{ env.CONTAINER_REGISTRY_URL }} --query 'passwords[0].value' --output tsv) 
+          echo "REGISTRY_PW=$h" >> $GITHUB_ENV
+
+      # Set AKS context
+      - name: Set AKS context
+        id: set-context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }} 
+          cluster-name: ${{ secrets.AZURE_APP_NAME }} 
+      
+      # Setup kubectl
+      - name: Setup kubectl
+        id: install-kubectl
+        uses: azure/setup-kubectl@v3 
+
+      # Builds the Docker images.
+      - name: Build book-catalog 
+        env:
+          NAME: book-catalog
+          DIRECTORY: book-catalog
+          CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
+        run: | 
+          chmod +x ./scripts/build-image.sh
+          ./scripts/build-image.sh
+      
+      - name: Build inventory-management
+        env:
+          NAME: inventory-management
+          DIRECTORY: inventory-management
+          CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
+        run: | 
+          chmod +x ./scripts/build-image.sh
+          ./scripts/build-image.sh
+
+      # Log the images present
+      - name: Log Docker images
+        run: |
+          echo "Available Docker images:"
+          docker images
+
+      # Push the Docker images to the container registry.
+      - name: Push book-catalog 
+        env:
+          NAME: book-catalog
+          DIRECTORY: book-catalog
+          CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
+          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}
+          REGISTRY_PW: ${{ env.REGISTRY_PW }}
+        run: | 
+          chmod +x ./scripts/push-image.sh
+          ./scripts/push-image.sh
+
+      - name: Push inventory-management
+        env:
+          NAME: inventory-management
+          DIRECTORY: inventory-management
+          CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
+          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}  
+          REGISTRY_PW: ${{ env.REGISTRY_PW }}
+        run: | 
+          chmod +x ./scripts/push-image.sh
+          ./scripts/push-image.sh
+
+      # Expands the configuration template and deploys the microservice.
+      - name: Deploy
+        env:
+          CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
+          VERSION: ${{ env.VERSION }}
+        run: | 
+          chmod +x ./scripts/deploy.sh
+          ./scripts/deploy.sh
+      
+      # Wait for the deployment to be ready
+      - name: Wait for deployment to be ready
+        run: |
+          echo "Waiting for deployment to be ready..."
+          for i in {1..30}; do
+            if kubectl get pods --field-selector=status.phase=Running | grep -q "book-catalog"; then
+              echo "Book Catalog deployment is ready."
+              break
+            fi
+            echo "Waiting... ($i)"
+            sleep 10
+          done
+
+          for i in {1..30}; do
+            if kubectl get pods --field-selector=status.phase=Running | grep -q "inventory-management"; then
+              echo "Inventory Management deployment is ready."
+              break
+            fi
+            echo "Waiting... ($i)"
+            sleep 10
+          done
+
+      # Getting external IP address for accessing deployment.
+      - name: 'Getting Deployment address'
+        run: 'kubectl get services'
