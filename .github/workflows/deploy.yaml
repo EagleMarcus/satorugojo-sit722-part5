@@ -4,26 +4,22 @@
 name: Deploy the Microservices
 
 on:
- 
+  
   workflow_dispatch: 
 
 jobs:
-
-  terraform:
-    runs-on: ubuntu-latest
-
   deploy:
     runs-on: ubuntu-latest
     
     env:      
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_APP_NAME: ${{ secrets.AZURE_APP_NAME }}
+      AZURE_APP_NAME: ${{ secrets.AZURE_APP_NAME }}  # Use this as the registry username
       AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
       VERSION: ${{ github.sha }}
 
     steps:
-      # Checks-out repository under $GITHUB_WORKSPACE.
+      # Checks-out your repository under $GITHUB_WORKSPACE.
       - uses: actions/checkout@v3
 
       # Set up Docker
@@ -96,24 +92,24 @@ jobs:
           echo "Available Docker images:"
           docker images
 
-      # Push the Docker images to the container registry.
-      - name: Push book-catalog 
+      # Publishes the Docker images to the container registry.
+      - name: Publish book-catalog 
         env:
           NAME: book-catalog
           DIRECTORY: book-catalog
           CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
-          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}
+          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}  # Use AZURE_APP_NAME here
           REGISTRY_PW: ${{ env.REGISTRY_PW }}
         run: | 
           chmod +x ./scripts/push-image.sh
           ./scripts/push-image.sh
 
-      - name: Push inventory-management
+      - name: Publish inventory-management
         env:
           NAME: inventory-management
           DIRECTORY: inventory-management
           CONTAINER_REGISTRY: ${{ env.CONTAINER_REGISTRY_URL }}
-          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}  
+          REGISTRY_UN: ${{ env.AZURE_APP_NAME }}  # Use AZURE_APP_NAME here
           REGISTRY_PW: ${{ env.REGISTRY_PW }}
         run: | 
           chmod +x ./scripts/push-image.sh
