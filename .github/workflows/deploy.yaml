@@ -1,14 +1,10 @@
 # 
 # GitHub Actions workflow.
 #
-
 name: Deploy the Microservices
 
 on:
-  
-  #
-  # Deployment on manual interference through the GitHub Actions user interface.
-  #
+ 
   workflow_dispatch: 
 
 jobs:
